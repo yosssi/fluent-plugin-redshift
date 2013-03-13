@@ -77,7 +77,7 @@ class RedshiftOutput < BufferedOutput
     # no data -> skip
     unless tmp
       $log.debug "received no valid data. "
-      return
+      return false # for debug
     end
 
     # create a file path with time format
@@ -101,6 +101,7 @@ class RedshiftOutput < BufferedOutput
     ensure
       conn.close rescue nil if conn
     end
+    true # for debug
   end
 
   private
@@ -130,22 +131,19 @@ class RedshiftOutput < BufferedOutput
     end
 
     # convert json to tsv format text
-    table_texts = ""
-    chunk.msgpack_each do |record|
-      begin
-        table_texts << json_to_table_text(redshift_table_columns, record[@record_log_tag], delimiter)
-      rescue => e
-        $log.error "failed to create table text from json. text=(#{record[@record_log_tag]})", :error=>$!.to_s
-        $log.error_backtrace
-      end
-    end
-    return nil if table_texts.empty?
-
-    # create gz
     gzw = nil
     begin
       gzw = Zlib::GzipWriter.new(dst_file)
-      gzw.write(table_texts)
+      chunk.msgpack_each do |record|
+        begin
+          tsv_text = json_to_table_text(redshift_table_columns, record[@record_log_tag], delimiter)
+          gzw.write(tsv_text) if tsv_text and not tsv_text.empty?
+        rescue => e
+          $log.error "failed to create table text from json. text=(#{record[@record_log_tag]})", :error=>$!.to_s
+          $log.error_backtrace
+        end
+      end
+      return nil unless gzw.pos > 0
     ensure
       gzw.close rescue nil if gzw
     end

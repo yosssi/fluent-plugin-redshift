@@ -231,14 +231,14 @@ class RedshiftOutputTest < Test::Unit::TestCase
     setup_mocks(%[val_a,val_b,val_c,val_d\nval_e,val_f,val_g,val_h\n])
     d_csv = create_driver
     emit_csv(d_csv)
-    d_csv.run
+    assert_equal true, d_csv.run
   end
 
   def test_write_with_json
     setup_mocks(%[val_a\tval_b\t\t\t\t\t\t\n\t\tval_c\tval_d\t\t\t\t\n])
     d_json = create_driver(CONFIG_JSON)
     emit_json(d_json)
-    d_json.run
+    assert_equal true, d_json.run
   end
 
   def test_write_with_json_hash_value
@@ -246,7 +246,7 @@ class RedshiftOutputTest < Test::Unit::TestCase
     d_json = create_driver(CONFIG_JSON)
     d_json.emit({"log" => %[{"key_a" : "val_a", "key_b" : {"foo" : "var"}}]} , DEFAULT_TIME)
     d_json.emit(RECORD_JSON_B, DEFAULT_TIME)
-    d_json.run
+    assert_equal true, d_json.run
   end
 
   def test_write_with_json_array_value
@@ -254,7 +254,7 @@ class RedshiftOutputTest < Test::Unit::TestCase
     d_json = create_driver(CONFIG_JSON)
     d_json.emit({"log" => %[{"key_a" : "val_a", "key_b" : ["foo", "var"]}]} , DEFAULT_TIME)
     d_json.emit(RECORD_JSON_B, DEFAULT_TIME)
-    d_json.run
+    assert_equal true, d_json.run
   end
 
   def test_write_with_json_no_data
@@ -262,7 +262,7 @@ class RedshiftOutputTest < Test::Unit::TestCase
     d_json = create_driver(CONFIG_JSON)
     d_json.emit("", DEFAULT_TIME)
     d_json.emit("", DEFAULT_TIME)
-    d_json.run
+    assert_equal false, d_json.run
   end
 
   def test_write_with_json_invalid_one_line
@@ -270,7 +270,7 @@ class RedshiftOutputTest < Test::Unit::TestCase
     d_json = create_driver(CONFIG_JSON)
     d_json.emit({"log" => %[}}]}, DEFAULT_TIME)
     d_json.emit(RECORD_JSON_B, DEFAULT_TIME)
-    d_json.run
+    assert_equal true, d_json.run
   end
 
   def test_write_with_json_no_available_data
@@ -278,7 +278,7 @@ class RedshiftOutputTest < Test::Unit::TestCase
     d_json = create_driver(CONFIG_JSON)
     d_json.emit(RECORD_JSON_A, DEFAULT_TIME)
     d_json.emit({"log" => %[{"key_o" : "val_o", "key_p" : "val_p"}]}, DEFAULT_TIME)
-    d_json.run
+    assert_equal true, d_json.run
   end
 
   def test_write_redshift_connection_error
@@ -317,9 +317,7 @@ class RedshiftOutputTest < Test::Unit::TestCase
 
     d_csv = create_driver
     emit_csv(d_csv)
-    assert_nothing_raised {
-      d_csv.run
-    }
+    assert_equal true,  d_csv.run
   end
 
   def test_write_with_json_redshift_connection_error
@@ -356,9 +354,7 @@ class RedshiftOutputTest < Test::Unit::TestCase
 
     d_json = create_driver(CONFIG_JSON)
     emit_json(d_json)
-    assert_nothing_raised {
-      d_json.run
-    }
+    assert_equal false, d_json.run
   end
 
   def test_write_with_json_failed_to_get_columns
@@ -388,8 +384,6 @@ class RedshiftOutputTest < Test::Unit::TestCase
 
     d_json = create_driver(CONFIG_JSON)
     emit_json(d_json)
-    assert_nothing_raised {
-      d_json.run
-    }
+    assert_equal false, d_json.run
   end
 end
