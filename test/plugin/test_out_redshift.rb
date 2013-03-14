@@ -26,6 +26,7 @@ class RedshiftOutputTest < Test::Unit::TestCase
     redshift_tablename test_table
     buffer_type memory
     utc
+    log_suffix id:5 host:localhost
   ]
   CONFIG_CSV= %[
     #{CONFIG_BASE}
@@ -126,6 +127,10 @@ class RedshiftOutputTest < Test::Unit::TestCase
     d4 = create_driver(CONFIG_PIPE_DELIMITER_WITH_NAME)
     assert_equal "pipe", d4.instance.file_type
     assert_equal "|", d4.instance.delimiter
+  end
+  def test_configure_no_log_suffix
+    d = create_driver(CONFIG_CSV.gsub(/ *log_suffix *.+$/, ''))
+    assert_equal "", d.instance.log_suffix
   end
 
   def emit_csv(d)

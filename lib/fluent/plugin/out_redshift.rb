@@ -34,6 +34,8 @@ class RedshiftOutput < BufferedOutput
   # file format
   config_param :file_type, :string, :default => nil  # json, tsv, csv
   config_param :delimiter, :string, :default => nil
+  # for debug
+  config_param :log_suffix, :string, :default => ''
 
   def configure(conf)
     super
@@ -48,7 +50,7 @@ class RedshiftOutput < BufferedOutput
       password:@redshift_password
     }
     @delimiter = determine_delimiter(@file_type) if @delimiter.nil? or @delimiter.empty?
-    $log.debug "redshift file_type:#{@file_type} delimiter:'#{@delimiter}'"
+    $log.debug format_log("redshift file_type:#{@file_type} delimiter:'#{@delimiter}'")
     @copy_sql_template = "copy #{@redshift_tablename} from '%s' CREDENTIALS 'aws_access_key_id=#{@aws_key_id};aws_secret_access_key=%s' delimiter '#{@delimiter}' REMOVEQUOTES GZIP;"
   end
 
@@ -76,7 +78,7 @@ class RedshiftOutput < BufferedOutput
 
     # no data -> skip
     unless tmp
-      $log.debug "received no valid data. "
+      $log.debug format_log("received no valid data. ")
       return false # for debug
     end
 
@@ -89,19 +91,24 @@ class RedshiftOutput < BufferedOutput
     # copy gz on s3 to redshift
     s3_uri = "s3://#{@s3_bucket}/#{s3path}"
     sql = @copy_sql_template % [s3_uri, @aws_sec_key]
-    $log.debug "start copying. s3_uri=#{s3_uri}"
+    $log.debug  format_log("start copying. s3_uri=#{s3_uri}")
     conn = nil
     begin
       conn = PG.connect(@db_conf)
       conn.exec(sql)
-      $log.info "completed copying to redshift. s3_uri=#{s3_uri}"
+      $log.info format_log("completed copying to redshift. s3_uri=#{s3_uri}")
     rescue PG::Error => e
-      $log.error "failed to copy data into redshift. sql=#{s3_uri}", :error=>e.to_s
+      $log.error format_log("failed to copy data into redshift. sql=#{s3_uri}"), :error=>e.to_s
       raise e if e.result.nil? # retry if connection errors
     ensure
       conn.close rescue nil if conn
     end
     true # for debug
+  end
+
+  protected
+  def format_log(message)
+    "#{message} #{@log_suffix}" if @log_suffix and not @log_suffix.empty?
   end
 
   private
@@ -126,7 +133,7 @@ class RedshiftOutput < BufferedOutput
     if redshift_table_columns == nil
       raise "failed to fetch the redshift table definition."
     elsif redshift_table_columns.empty?
-      $log.warn "no table on redshift. table_name=#{@redshift_tablename}"
+      $log.warn format_log("no table on redshift. table_name=#{@redshift_tablename}")
       return nil
     end
 
@@ -139,7 +146,7 @@ class RedshiftOutput < BufferedOutput
           tsv_text = json_to_table_text(redshift_table_columns, record[@record_log_tag], delimiter)
           gzw.write(tsv_text) if tsv_text and not tsv_text.empty?
         rescue => e
-          $log.error "failed to create table text from json. text=(#{record[@record_log_tag]})", :error=>$!.to_s
+          $log.error format_log("failed to create table text from json. text=(#{record[@record_log_tag]})"), :error=>$!.to_s
           $log.error_backtrace
         end
       end
@@ -183,7 +190,7 @@ class RedshiftOutput < BufferedOutput
     begin
       json_obj = JSON.parse(json_text)
     rescue => e
-      $log.warn "failed to parse json. ", :error=>e.to_s
+      $log.warn format_log("failed to parse json. "), :error=>e.to_s
       return ""
     end
     return "" unless json_obj
@@ -196,7 +203,7 @@ class RedshiftOutput < BufferedOutput
       val.to_s unless val.nil?
     end
     if val_list.all?{|v| v.nil? or v.empty?}
-      $log.warn "no data match for table columns on redshift. json_text=#{json_text} table_columns=#{redshift_table_columns}"
+      $log.warn format_log("no data match for table columns on redshift. json_text=#{json_text} table_columns=#{redshift_table_columns}")
       return ""
     end
 
@@ -206,7 +213,7 @@ class RedshiftOutput < BufferedOutput
         row << val_list # inlude new line
       end
     rescue => e
-      $log.debug "failed to generate csv val_list:#{val_list} delimiter:(#{delimiter})"
+      $log.debug format_log("failed to generate csv val_list:#{val_list} delimiter:(#{delimiter})")
       raise e
     end
   end
