@@ -98,7 +98,7 @@ class RedshiftOutput < BufferedOutput
       conn.exec(sql)
       $log.info format_log("completed copying to redshift. s3_uri=#{s3_uri}")
     rescue PG::Error => e
-      $log.error format_log("failed to copy data into redshift. sql=#{s3_uri}"), :error=>e.to_s
+      $log.error format_log("failed to copy data into redshift. s3_uri=#{s3_uri}"), :error=>e.to_s
       raise e if e.result.nil? # retry if connection errors
     ensure
       conn.close rescue nil if conn
