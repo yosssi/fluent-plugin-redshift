@@ -4,6 +4,9 @@ module Fluent
 class RedshiftOutput < BufferedOutput
   Fluent::Plugin.register_output('redshift', self)
 
+  # ignore load table error. (invalid data format)
+  IGNORE_REDSHIFT_ERROR_REGEXP = /^ERROR:  Load into table '[^']+' failed\./
+
   def initialize
     super
     require 'aws-sdk'
@@ -99,7 +102,8 @@ class RedshiftOutput < BufferedOutput
       $log.info format_log("completed copying to redshift. s3_uri=#{s3_uri}")
     rescue PG::Error => e
       $log.error format_log("failed to copy data into redshift. s3_uri=#{s3_uri}"), :error=>e.to_s
-      raise e if e.result.nil? # retry if connection errors
+      raise e unless e.to_s =~ IGNORE_REDSHIFT_ERROR_REGEXP
+      return false # for debug
     ensure
       conn.close rescue nil if conn
     end

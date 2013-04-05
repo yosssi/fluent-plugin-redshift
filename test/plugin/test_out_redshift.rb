@@ -305,14 +305,14 @@ class RedshiftOutputTest < Test::Unit::TestCase
     }
   end
 
-  def test_write_redshift_logic_error
+  def test_write_redshift_load_error
     PG::Error.module_eval { attr_accessor :result}
     def PG.connect(dbinfo)
       return Class.new do
         def initialize(return_keys=[]); end
         def exec(sql)
-          error = PG::Error.new("redshift logic error")
-          error.result = "logic error"
+          error = PG::Error.new("ERROR:  Load into table 'apache_log' failed.  Check 'stl_load_errors' system table for details.")
+          error.result = "ERROR:  Load into table 'apache_log' failed.  Check 'stl_load_errors' system table for details."
           raise error
         end
         def close; end
@@ -322,7 +322,7 @@ class RedshiftOutputTest < Test::Unit::TestCase
 
     d_csv = create_driver
     emit_csv(d_csv)
-    assert_equal true,  d_csv.run
+    assert_equal false,  d_csv.run
   end
 
   def test_write_with_json_redshift_connection_error
