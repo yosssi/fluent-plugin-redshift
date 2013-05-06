@@ -54,7 +54,7 @@ class RedshiftOutput < BufferedOutput
     }
     @delimiter = determine_delimiter(@file_type) if @delimiter.nil? or @delimiter.empty?
     $log.debug format_log("redshift file_type:#{@file_type} delimiter:'#{@delimiter}'")
-    @copy_sql_template = "copy #{@redshift_tablename} from '%s' CREDENTIALS 'aws_access_key_id=#{@aws_key_id};aws_secret_access_key=%s' delimiter '#{@delimiter}' REMOVEQUOTES GZIP;"
+    @copy_sql_template = "copy #{@redshift_tablename} from '%s' CREDENTIALS 'aws_access_key_id=#{@aws_key_id};aws_secret_access_key=%s' delimiter '#{@delimiter}' GZIP TRUNCATECOLUMNS ESCAPE FILLRECORD ACCEPTANYDATE;"
   end
 
   def start
@@ -74,6 +74,8 @@ class RedshiftOutput < BufferedOutput
   end
 
   def write(chunk)
+    $log.debug format_log("start creating gz.")
+
     # create a gz file
     tmp = Tempfile.new("s3-")
     tmp = (json?) ? create_gz_file_from_json(tmp, chunk, @delimiter)
@@ -211,15 +213,18 @@ class RedshiftOutput < BufferedOutput
       return ""
     end
 
-    # generate tsv text
-    begin
-      CSV.generate(:col_sep=>delimiter, :quote_char => '"') do |row|
-        row << val_list # inlude new line
+    generate_line_with_delimiter(val_list, delimiter)
+  end
+
+  def generate_line_with_delimiter(val_list, delimiter)
+    val_list = val_list.collect do |val|
+      if val.nil? or val.empty?
+        ""
+      else
+        val.gsub(/\\/, "\\\\\\").gsub(/\t/, "\\\t").gsub(/\n/, "\\\n") # escape tab, newline and backslash
       end
-    rescue => e
-      $log.debug format_log("failed to generate csv val_list:#{val_list} delimiter:(#{delimiter})")
-      raise e
     end
+    val_list.join(delimiter) + "\n"
   end
 
   def create_s3path(bucket, path)

@@ -247,7 +247,7 @@ class RedshiftOutputTest < Test::Unit::TestCase
   end
 
   def test_write_with_json_hash_value
-    setup_mocks("val_a\t\"{\"\"foo\"\":\"\"var\"\"}\"\t\t\t\t\t\t\n\t\tval_c\tval_d\t\t\t\t\n")
+    setup_mocks("val_a\t{\"foo\":\"var\"}\t\t\t\t\t\t\n\t\tval_c\tval_d\t\t\t\t\n")
     d_json = create_driver(CONFIG_JSON)
     d_json.emit({"log" => %[{"key_a" : "val_a", "key_b" : {"foo" : "var"}}]} , DEFAULT_TIME)
     d_json.emit(RECORD_JSON_B, DEFAULT_TIME)
@@ -255,9 +255,17 @@ class RedshiftOutputTest < Test::Unit::TestCase
   end
 
   def test_write_with_json_array_value
-    setup_mocks("val_a\t\"[\"\"foo\"\",\"\"var\"\"]\"\t\t\t\t\t\t\n\t\tval_c\tval_d\t\t\t\t\n")
+    setup_mocks("val_a\t[\"foo\",\"var\"]\t\t\t\t\t\t\n\t\tval_c\tval_d\t\t\t\t\n")
     d_json = create_driver(CONFIG_JSON)
     d_json.emit({"log" => %[{"key_a" : "val_a", "key_b" : ["foo", "var"]}]} , DEFAULT_TIME)
+    d_json.emit(RECORD_JSON_B, DEFAULT_TIME)
+    assert_equal true, d_json.run
+  end
+
+  def test_write_with_json_including_tab_newline_quote
+    setup_mocks("val_a_with_\\\t_tab_\\\n_newline\tval_b_with_\\\\_quote\t\t\t\t\t\t\n\t\tval_c\tval_d\t\t\t\t\n")
+    d_json = create_driver(CONFIG_JSON)
+    d_json.emit({"log" => %[{"key_a" : "val_a_with_\\t_tab_\\n_newline", "key_b" : "val_b_with_\\\\_quote"}]} , DEFAULT_TIME)
     d_json.emit(RECORD_JSON_B, DEFAULT_TIME)
     assert_equal true, d_json.run
   end
@@ -380,15 +388,4 @@ class RedshiftOutputTest < Test::Unit::TestCase
     }
   end
 
-  def test_write_with_json_failed_to_generate_tsv
-    flexmock(CSV).should_receive(:generate).with_any_args.
-        and_return {
-          raise "failed to generate tsv."
-        }
-    setup_s3_mock("")
-
-    d_json = create_driver(CONFIG_JSON)
-    emit_json(d_json)
-    assert_equal false, d_json.run
-  end
 end
