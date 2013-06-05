@@ -114,7 +114,7 @@ class RedshiftOutput < BufferedOutput
 
   protected
   def format_log(message)
-    "#{message} #{@log_suffix}" if @log_suffix and not @log_suffix.empty?
+    (@log_suffix and not @log_suffix.empty?) ? "#{message} #{@log_suffix}" : message
   end
 
   private
