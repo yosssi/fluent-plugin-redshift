@@ -26,6 +26,7 @@ class RedshiftOutputTest < Test::Unit::TestCase
     redshift_tablename test_table
     buffer_type memory
     utc
+    log_suffix id:5 host:localhost
   ]
   CONFIG_CSV= %[
     #{CONFIG_BASE}
@@ -126,6 +127,10 @@ class RedshiftOutputTest < Test::Unit::TestCase
     d4 = create_driver(CONFIG_PIPE_DELIMITER_WITH_NAME)
     assert_equal "pipe", d4.instance.file_type
     assert_equal "|", d4.instance.delimiter
+  end
+  def test_configure_no_log_suffix
+    d = create_driver(CONFIG_CSV.gsub(/ *log_suffix *.+$/, ''))
+    assert_equal "", d.instance.log_suffix
   end
 
   def emit_csv(d)
@@ -231,30 +236,38 @@ class RedshiftOutputTest < Test::Unit::TestCase
     setup_mocks(%[val_a,val_b,val_c,val_d\nval_e,val_f,val_g,val_h\n])
     d_csv = create_driver
     emit_csv(d_csv)
-    d_csv.run
+    assert_equal true, d_csv.run
   end
 
   def test_write_with_json
     setup_mocks(%[val_a\tval_b\t\t\t\t\t\t\n\t\tval_c\tval_d\t\t\t\t\n])
     d_json = create_driver(CONFIG_JSON)
     emit_json(d_json)
-    d_json.run
+    assert_equal true, d_json.run
   end
 
   def test_write_with_json_hash_value
-    setup_mocks("val_a\t\"{\"\"foo\"\":\"\"var\"\"}\"\t\t\t\t\t\t\n\t\tval_c\tval_d\t\t\t\t\n")
+    setup_mocks("val_a\t{\"foo\":\"var\"}\t\t\t\t\t\t\n\t\tval_c\tval_d\t\t\t\t\n")
     d_json = create_driver(CONFIG_JSON)
     d_json.emit({"log" => %[{"key_a" : "val_a", "key_b" : {"foo" : "var"}}]} , DEFAULT_TIME)
     d_json.emit(RECORD_JSON_B, DEFAULT_TIME)
-    d_json.run
+    assert_equal true, d_json.run
   end
 
   def test_write_with_json_array_value
-    setup_mocks("val_a\t\"[\"\"foo\"\",\"\"var\"\"]\"\t\t\t\t\t\t\n\t\tval_c\tval_d\t\t\t\t\n")
+    setup_mocks("val_a\t[\"foo\",\"var\"]\t\t\t\t\t\t\n\t\tval_c\tval_d\t\t\t\t\n")
     d_json = create_driver(CONFIG_JSON)
     d_json.emit({"log" => %[{"key_a" : "val_a", "key_b" : ["foo", "var"]}]} , DEFAULT_TIME)
     d_json.emit(RECORD_JSON_B, DEFAULT_TIME)
-    d_json.run
+    assert_equal true, d_json.run
+  end
+
+  def test_write_with_json_including_tab_newline_quote
+    setup_mocks("val_a_with_\\\t_tab_\\\n_newline\tval_b_with_\\\\_quote\t\t\t\t\t\t\n\t\tval_c\tval_d\t\t\t\t\n")
+    d_json = create_driver(CONFIG_JSON)
+    d_json.emit({"log" => %[{"key_a" : "val_a_with_\\t_tab_\\n_newline", "key_b" : "val_b_with_\\\\_quote"}]} , DEFAULT_TIME)
+    d_json.emit(RECORD_JSON_B, DEFAULT_TIME)
+    assert_equal true, d_json.run
   end
 
   def test_write_with_json_no_data
@@ -262,7 +275,7 @@ class RedshiftOutputTest < Test::Unit::TestCase
     d_json = create_driver(CONFIG_JSON)
     d_json.emit("", DEFAULT_TIME)
     d_json.emit("", DEFAULT_TIME)
-    d_json.run
+    assert_equal false, d_json.run
   end
 
   def test_write_with_json_invalid_one_line
@@ -270,7 +283,7 @@ class RedshiftOutputTest < Test::Unit::TestCase
     d_json = create_driver(CONFIG_JSON)
     d_json.emit({"log" => %[}}]}, DEFAULT_TIME)
     d_json.emit(RECORD_JSON_B, DEFAULT_TIME)
-    d_json.run
+    assert_equal true, d_json.run
   end
 
   def test_write_with_json_no_available_data
@@ -278,7 +291,7 @@ class RedshiftOutputTest < Test::Unit::TestCase
     d_json = create_driver(CONFIG_JSON)
     d_json.emit(RECORD_JSON_A, DEFAULT_TIME)
     d_json.emit({"log" => %[{"key_o" : "val_o", "key_p" : "val_p"}]}, DEFAULT_TIME)
-    d_json.run
+    assert_equal true, d_json.run
   end
 
   def test_write_redshift_connection_error
@@ -300,14 +313,14 @@ class RedshiftOutputTest < Test::Unit::TestCase
     }
   end
 
-  def test_write_redshift_logic_error
+  def test_write_redshift_load_error
     PG::Error.module_eval { attr_accessor :result}
     def PG.connect(dbinfo)
       return Class.new do
         def initialize(return_keys=[]); end
         def exec(sql)
-          error = PG::Error.new("redshift logic error")
-          error.result = "logic error"
+          error = PG::Error.new("ERROR:  Load into table 'apache_log' failed.  Check 'stl_load_errors' system table for details.")
+          error.result = "ERROR:  Load into table 'apache_log' failed.  Check 'stl_load_errors' system table for details."
           raise error
         end
         def close; end
@@ -317,9 +330,7 @@ class RedshiftOutputTest < Test::Unit::TestCase
 
     d_csv = create_driver
     emit_csv(d_csv)
-    assert_nothing_raised {
-      d_csv.run
-    }
+    assert_equal false,  d_csv.run
   end
 
   def test_write_with_json_redshift_connection_error
@@ -356,9 +367,7 @@ class RedshiftOutputTest < Test::Unit::TestCase
 
     d_json = create_driver(CONFIG_JSON)
     emit_json(d_json)
-    assert_nothing_raised {
-      d_json.run
-    }
+    assert_equal false, d_json.run
   end
 
   def test_write_with_json_failed_to_get_columns
@@ -379,17 +388,4 @@ class RedshiftOutputTest < Test::Unit::TestCase
     }
   end
 
-  def test_write_with_json_failed_to_generate_tsv
-    flexmock(CSV).should_receive(:generate).with_any_args.
-        and_return {
-          raise "failed to generate tsv."
-        }
-    setup_s3_mock("")
-
-    d_json = create_driver(CONFIG_JSON)
-    emit_json(d_json)
-    assert_nothing_raised {
-      d_json.run
-    }
-  end
 end

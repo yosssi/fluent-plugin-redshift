@@ -4,6 +4,9 @@ module Fluent
 class RedshiftOutput < BufferedOutput
   Fluent::Plugin.register_output('redshift', self)
 
+  # ignore load table error. (invalid data format)
+  IGNORE_REDSHIFT_ERROR_REGEXP = /^ERROR:  Load into table '[^']+' failed\./
+
   def initialize
     super
     require 'aws-sdk'
@@ -34,6 +37,8 @@ class RedshiftOutput < BufferedOutput
   # file format
   config_param :file_type, :string, :default => nil  # json, tsv, csv
   config_param :delimiter, :string, :default => nil
+  # for debug
+  config_param :log_suffix, :string, :default => ''
 
   def configure(conf)
     super
@@ -48,8 +53,8 @@ class RedshiftOutput < BufferedOutput
       password:@redshift_password
     }
     @delimiter = determine_delimiter(@file_type) if @delimiter.nil? or @delimiter.empty?
-    $log.debug "redshift file_type:#{@file_type} delimiter:'#{@delimiter}'"
-    @copy_sql_template = "copy #{@redshift_tablename} from '%s' CREDENTIALS 'aws_access_key_id=#{@aws_key_id};aws_secret_access_key=%s' delimiter '#{@delimiter}' REMOVEQUOTES GZIP;"
+    $log.debug format_log("redshift file_type:#{@file_type} delimiter:'#{@delimiter}'")
+    @copy_sql_template = "copy #{@redshift_tablename} from '%s' CREDENTIALS 'aws_access_key_id=#{@aws_key_id};aws_secret_access_key=%s' delimiter '#{@delimiter}' GZIP TRUNCATECOLUMNS ESCAPE FILLRECORD ACCEPTANYDATE;"
   end
 
   def start
@@ -69,6 +74,8 @@ class RedshiftOutput < BufferedOutput
   end
 
   def write(chunk)
+    $log.debug format_log("start creating gz.")
+
     # create a gz file
     tmp = Tempfile.new("s3-")
     tmp = (json?) ? create_gz_file_from_json(tmp, chunk, @delimiter)
@@ -76,8 +83,8 @@ class RedshiftOutput < BufferedOutput
 
     # no data -> skip
     unless tmp
-      $log.debug "received no valid data. "
-      return
+      $log.debug format_log("received no valid data. ")
+      return false # for debug
     end
 
     # create a file path with time format
@@ -89,18 +96,25 @@ class RedshiftOutput < BufferedOutput
     # copy gz on s3 to redshift
     s3_uri = "s3://#{@s3_bucket}/#{s3path}"
     sql = @copy_sql_template % [s3_uri, @aws_sec_key]
-    $log.debug "start copying. s3_uri=#{s3_uri}"
+    $log.debug  format_log("start copying. s3_uri=#{s3_uri}")
     conn = nil
     begin
       conn = PG.connect(@db_conf)
       conn.exec(sql)
-      $log.info "completed copying to redshift. s3_uri=#{s3_uri}"
+      $log.info format_log("completed copying to redshift. s3_uri=#{s3_uri}")
     rescue PG::Error => e
-      $log.error "failed to copy data into redshift. sql=#{s3_uri}", :error=>e.to_s
-      raise e if e.result.nil? # retry if connection errors
+      $log.error format_log("failed to copy data into redshift. s3_uri=#{s3_uri}"), :error=>e.to_s
+      raise e unless e.to_s =~ IGNORE_REDSHIFT_ERROR_REGEXP
+      return false # for debug
     ensure
       conn.close rescue nil if conn
     end
+    true # for debug
+  end
+
+  protected
+  def format_log(message)
+    (@log_suffix and not @log_suffix.empty?) ? "#{message} #{@log_suffix}" : message
   end
 
   private
@@ -125,27 +139,24 @@ class RedshiftOutput < BufferedOutput
     if redshift_table_columns == nil
       raise "failed to fetch the redshift table definition."
     elsif redshift_table_columns.empty?
-      $log.warn "no table on redshift. table_name=#{@redshift_tablename}"
+      $log.warn format_log("no table on redshift. table_name=#{@redshift_tablename}")
       return nil
     end
 
     # convert json to tsv format text
-    table_texts = ""
-    chunk.msgpack_each do |record|
-      begin
-        table_texts << json_to_table_text(redshift_table_columns, record[@record_log_tag], delimiter)
-      rescue => e
-        $log.error "failed to create table text from json. text=(#{record[@record_log_tag]})", :error=>$!.to_s
-        $log.error_backtrace
-      end
-    end
-    return nil if table_texts.empty?
-
-    # create gz
     gzw = nil
     begin
       gzw = Zlib::GzipWriter.new(dst_file)
-      gzw.write(table_texts)
+      chunk.msgpack_each do |record|
+        begin
+          tsv_text = json_to_table_text(redshift_table_columns, record[@record_log_tag], delimiter)
+          gzw.write(tsv_text) if tsv_text and not tsv_text.empty?
+        rescue => e
+          $log.error format_log("failed to create table text from json. text=(#{record[@record_log_tag]})"), :error=>$!.to_s
+          $log.error_backtrace
+        end
+      end
+      return nil unless gzw.pos > 0
     ensure
       gzw.close rescue nil if gzw
     end
@@ -185,7 +196,7 @@ class RedshiftOutput < BufferedOutput
     begin
       json_obj = JSON.parse(json_text)
     rescue => e
-      $log.warn "failed to parse json. ", :error=>e.to_s
+      $log.warn format_log("failed to parse json. "), :error=>e.to_s
       return ""
     end
     return "" unless json_obj
@@ -198,19 +209,22 @@ class RedshiftOutput < BufferedOutput
       val.to_s unless val.nil?
     end
     if val_list.all?{|v| v.nil? or v.empty?}
-      $log.warn "no data match for table columns on redshift. json_text=#{json_text} table_columns=#{redshift_table_columns}"
+      $log.warn format_log("no data match for table columns on redshift. json_text=#{json_text} table_columns=#{redshift_table_columns}")
       return ""
     end
 
-    # generate tsv text
-    begin
-      CSV.generate(:col_sep=>delimiter, :quote_char => '"') do |row|
-        row << val_list # inlude new line
+    generate_line_with_delimiter(val_list, delimiter)
+  end
+
+  def generate_line_with_delimiter(val_list, delimiter)
+    val_list = val_list.collect do |val|
+      if val.nil? or val.empty?
+        ""
+      else
+        val.gsub(/\\/, "\\\\\\").gsub(/\t/, "\\\t").gsub(/\n/, "\\\n") # escape tab, newline and backslash
       end
-    rescue => e
-      $log.debug "failed to generate csv val_list:#{val_list} delimiter:(#{delimiter})"
-      raise e
     end
+    val_list.join(delimiter) + "\n"
   end
 
   def create_s3path(bucket, path)
