@@ -15,7 +15,7 @@ Format:
 
     <match my.tag>
         type redshift
-        
+
         # s3 (for copying data to redshift)
         aws_key_id YOUR_AWS_KEY_ID
         aws_sec_key YOUR_AWS_SECRET_KEY
@@ -23,7 +23,7 @@ Format:
         s3_endpoint YOUR_S3_BUCKET_END_POINT
         path YOUR_S3_PATH
         timestamp_key_format year=%Y/month=%m/day=%d/hour=%H/%Y%m%d-%H%M
-        
+
         # redshift
         redshift_host YOUR_AMAZON_REDSHIFT_CLUSTER_END_POINT
         redshift_port YOUR_AMAZON_REDSHIFT_CLUSTER_PORT
@@ -32,7 +32,7 @@ Format:
         redshift_password YOUR_AMAZON_REDSHIFT_CLUSTER_PASSWORD
         redshift_tablename YOUR_AMAZON_REDSHIFT_CLUSTER_TARGET_TABLE_NAME
         file_type [tsv|csv|json]
-        
+
         # buffer
         buffer_type file
         buffer_path /var/log/fluent/redshift
@@ -49,18 +49,18 @@ Example (watch and upload json formatted apache log):
         tag redshift.json
         format /^(?<log>.*)$/
     </source>
-    
+
     <match redshift.json>
         type redshift
-        
+
         # s3 (for copying data to redshift)
         aws_key_id YOUR_AWS_KEY_ID
         aws_sec_key YOUR_AWS_SECRET_KEY
         s3_bucket hapyrus-example
         s3_endpoint s3.amazonaws.com
-        path apache_json_log
+        path path/on/s3/apache_json_log/
         timestamp_key_format year=%Y/month=%m/day=%d/hour=%H/%Y%m%d-%H%M
-        
+
         # redshift
         redshift_host xxx-yyy-zzz.xxxxxxxxxx.us-east-1.redshift.amazonaws.com
         redshift_port 5439
@@ -69,7 +69,7 @@ Example (watch and upload json formatted apache log):
         redshift_password fluent-password
         redshift_tablename apache_log
         file_type json
-        
+
         # buffer
         buffer_type file
         buffer_path /var/log/fluent/redshift

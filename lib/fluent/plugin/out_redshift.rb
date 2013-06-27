@@ -42,8 +42,8 @@ class RedshiftOutput < BufferedOutput
 
   def configure(conf)
     super
-    @path = "#{@path}/" if /.+[^\/]$/ =~ @path
-    @path = "" if @path == "/"
+    @path = "#{@path}/" unless @path.end_with?('/') # append last slash
+    @path = @path[1..-1] if @path.start_with?('/')  # remove head slash
     @utc = true if conf['utc']
     @db_conf = {
       host:@redshift_host,

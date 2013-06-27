@@ -109,6 +109,14 @@ class RedshiftOutputTest < Test::Unit::TestCase
     d = create_driver(CONFIG_CSV.gsub(/ *path *.+$/, 'path log/'))
     assert_equal "log/", d.instance.path
   end
+  def test_configure_path_starts_with_slash
+    d = create_driver(CONFIG_CSV.gsub(/ *path *.+$/, 'path /log/'))
+    assert_equal "log/", d.instance.path
+  end
+  def test_configure_path_starts_with_slash_without_last_slash
+    d = create_driver(CONFIG_CSV.gsub(/ *path *.+$/, 'path /log'))
+    assert_equal "log/", d.instance.path
+  end
   def test_configure_tsv
     d1 = create_driver(CONFIG_TSV)
     assert_equal "tsv", d1.instance.file_type
