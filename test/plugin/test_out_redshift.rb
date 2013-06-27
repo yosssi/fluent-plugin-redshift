@@ -228,12 +228,17 @@ class RedshiftOutputTest < Test::Unit::TestCase
     end
   end
 
+  def setup_tempfile_mock_to_be_closed
+    flexmock(Tempfile).new_instances.should_receive(:close!).at_least.once
+  end
+
   def setup_mocks(expected_data)
     setup_pg_mock
     setup_s3_mock(expected_data) end
 
   def test_write_with_csv
     setup_mocks(%[val_a,val_b,val_c,val_d\nval_e,val_f,val_g,val_h\n])
+    setup_tempfile_mock_to_be_closed
     d_csv = create_driver
     emit_csv(d_csv)
     assert_equal true, d_csv.run
@@ -241,6 +246,7 @@ class RedshiftOutputTest < Test::Unit::TestCase
 
   def test_write_with_json
     setup_mocks(%[val_a\tval_b\t\t\t\t\t\t\n\t\tval_c\tval_d\t\t\t\t\n])
+    setup_tempfile_mock_to_be_closed
     d_json = create_driver(CONFIG_JSON)
     emit_json(d_json)
     assert_equal true, d_json.run

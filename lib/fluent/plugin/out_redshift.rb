@@ -93,6 +93,10 @@ class RedshiftOutput < BufferedOutput
     # upload gz to s3
     @bucket.objects[s3path].write(Pathname.new(tmp.path),
                                   :acl => :bucket_owner_full_control)
+
+    # close temp file
+    tmp.close!
+
     # copy gz on s3 to redshift
     s3_uri = "s3://#{@s3_bucket}/#{s3path}"
     sql = @copy_sql_template % [s3_uri, @aws_sec_key]
