@@ -31,7 +31,7 @@ Format:
         redshift_user YOUR_AMAZON_REDSHIFT_CLUSTER_USER_NAME
         redshift_password YOUR_AMAZON_REDSHIFT_CLUSTER_PASSWORD
         redshift_tablename YOUR_AMAZON_REDSHIFT_CLUSTER_TARGET_TABLE_NAME
-        file_type [tsv|csv|json]
+        file_type [tsv|csv|json|hash]
 
         # buffer
         buffer_type file
@@ -110,7 +110,7 @@ Example (watch and upload json formatted apache log):
 
 + `redshift_tablename` (required) : table name to store data.
 
-+ `file_type` : file format of the source data.  `csv`, `tsv` or `json` are available.
++ `file_type` : file format of the source data.  `csv`, `tsv`, `hash` or `json` are available.
 
 + `delimiter` : delimiter of the source data. This option will be ignored if `file_type` is specified.
 
@@ -123,6 +123,26 @@ Example (watch and upload json formatted apache log):
 + `buffer_chunk_limit` : limit buffer size to chunk.
 
 + `utc` : utc time zone. This parameter affects `timestamp_key_format`.
+
+## Logging examples
+```ruby
+# examples by fluent-logger
+require 'fluent-logger'
+log = Fluent::Logger::FluentLogger.new(nil, :host => 'localhost', :port => 24224)
+
+# file_type: csv
+log.post('your.tag', :log => "12345,12345")
+
+# file_type: tsv
+log.post('your.tag', :log => "12345\t12345")
+
+# file_type: json
+require 'json'
+log.post('your.tag', :log => { :user_id => 12345, :data_id => 12345 }.to_json)
+
+# file_type: hash
+log.post('your.tag', :user_id => 12345, :data_id => 12345)
+```
 
 ## License
 
