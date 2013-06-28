@@ -89,6 +89,8 @@ class RedshiftOutputTest < Test::Unit::TestCase
     assert_equal "test_user", d.instance.redshift_user
     assert_equal "test_password", d.instance.redshift_password
     assert_equal "test_table", d.instance.redshift_tablename
+    assert_equal "FILLRECORD ACCEPTANYDATE TRUNCATECOLUMNS", d.instance.redshift_copy_base_options
+    assert_equal nil, d.instance.redshift_copy_options
     assert_equal "csv", d.instance.file_type
     assert_equal ",", d.instance.delimiter
     assert_equal true, d.instance.utc
