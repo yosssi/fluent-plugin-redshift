@@ -37,7 +37,7 @@ class RedshiftOutput < BufferedOutput
   config_param :redshift_copy_base_options, :string , :default => "FILLRECORD ACCEPTANYDATE TRUNCATECOLUMNS"
   config_param :redshift_copy_options, :string , :default => nil
   # file format
-  config_param :file_type, :string, :default => nil  # json, tsv, csv
+  config_param :file_type, :string, :default => nil  # json, tsv, csv, msgpack
   config_param :delimiter, :string, :default => nil
   # for debug
   config_param :log_suffix, :string, :default => ''
@@ -72,7 +72,13 @@ class RedshiftOutput < BufferedOutput
   end
 
   def format(tag, time, record)
-    (json?) ? record.to_msgpack : "#{record[@record_log_tag]}\n"
+    if json?
+      record.to_msgpack
+    elsif msgpack?
+      { @record_log_tag => record }.to_msgpack
+    else
+      "#{record[@record_log_tag]}\n"
+    end
   end
 
   def write(chunk)
@@ -80,8 +86,12 @@ class RedshiftOutput < BufferedOutput
 
     # create a gz file
     tmp = Tempfile.new("s3-")
-    tmp = (json?) ? create_gz_file_from_json(tmp, chunk, @delimiter)
-                  : create_gz_file_from_msgpack(tmp, chunk)
+    tmp =
+      if json? || msgpack?
+        create_gz_file_from_structured_data(tmp, chunk, @delimiter)
+      else
+        create_gz_file_from_flat_data(tmp, chunk)
+      end
 
     # no data -> skip
     unless tmp
@@ -128,7 +138,11 @@ class RedshiftOutput < BufferedOutput
     @file_type == 'json'
   end
 
-  def create_gz_file_from_msgpack(dst_file, chunk)
+  def msgpack?
+    @file_type == 'msgpack'
+  end
+
+  def create_gz_file_from_flat_data(dst_file, chunk)
     gzw = nil
     begin
       gzw = Zlib::GzipWriter.new(dst_file)
@@ -139,7 +153,7 @@ class RedshiftOutput < BufferedOutput
     dst_file
   end
 
-  def create_gz_file_from_json(dst_file, chunk, delimiter)
+  def create_gz_file_from_structured_data(dst_file, chunk, delimiter)
     # fetch the table definition from redshift
     redshift_table_columns = fetch_table_columns
     if redshift_table_columns == nil
@@ -155,10 +169,16 @@ class RedshiftOutput < BufferedOutput
       gzw = Zlib::GzipWriter.new(dst_file)
       chunk.msgpack_each do |record|
         begin
-          tsv_text = json_to_table_text(redshift_table_columns, record[@record_log_tag], delimiter)
+          hash = json? ? json_to_hash(record[@record_log_tag]) : record[@record_log_tag]
+          tsv_text = hash_to_table_text(redshift_table_columns, hash, delimiter)
           gzw.write(tsv_text) if tsv_text and not tsv_text.empty?
         rescue => e
-          $log.error format_log("failed to create table text from json. text=(#{record[@record_log_tag]})"), :error=>$!.to_s
+          if json?
+            $log.error format_log("failed to create table text from json. text=(#{record[@record_log_tag]})"), :error=>$!.to_s
+          else
+            $log.error format_log("failed to create table text from msgpack. text=(#{record[@record_log_tag]})"), :error=>$!.to_s
+          end
+
           $log.error_backtrace
         end
       end
@@ -171,7 +191,7 @@ class RedshiftOutput < BufferedOutput
 
   def determine_delimiter(file_type)
     case file_type
-    when 'json', 'tsv'
+    when 'json', 'msgpack', 'tsv'
       "\t"
     when "csv"
       ','
@@ -194,28 +214,31 @@ class RedshiftOutput < BufferedOutput
     end
   end
 
-  def json_to_table_text(redshift_table_columns, json_text, delimiter)
-    return "" if json_text.nil? or json_text.empty?
+  def json_to_hash(json_text)
+    return nil if json_text.to_s.empty?
 
-    # parse json text
-    json_obj = nil
-    begin
-      json_obj = JSON.parse(json_text)
-    rescue => e
-      $log.warn format_log("failed to parse json. "), :error=>e.to_s
-      return ""
-    end
-    return "" unless json_obj
+    JSON.parse(json_text)
+  rescue => e
+    $log.warn format_log("failed to parse json. "), :error => e.to_s
+  end
 
-    # extract values from json
+  def hash_to_table_text(redshift_table_columns, hash, delimiter)
+    return "" unless hash
+
+    # extract values from hash
     val_list = redshift_table_columns.collect do |cn|
-      val = json_obj[cn]
-      val = nil unless val and not val.to_s.empty?
+      val = hash[cn]
       val = JSON.generate(val) if val.kind_of?(Hash) or val.kind_of?(Array)
-      val.to_s unless val.nil?
+
+      if val.to_s.empty?
+        nil
+      else
+        val.to_s
+      end
     end
+
     if val_list.all?{|v| v.nil? or v.empty?}
-      $log.warn format_log("no data match for table columns on redshift. json_text=#{json_text} table_columns=#{redshift_table_columns}")
+      $log.warn format_log("no data match for table columns on redshift. data=#{hash} table_columns=#{redshift_table_columns}")
       return ""
     end
 
