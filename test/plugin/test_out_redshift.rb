@@ -194,8 +194,8 @@ class RedshiftOutputTest < Test::Unit::TestCase
   def test_format_hash
     d_hash = create_driver_no_write(CONFIG_HASH)
     emit_hash(d_hash)
-    d_hash.expect_format RECORD_HASH_A.to_msgpack
-    d_hash.expect_format RECORD_HASH_B.to_msgpack
+    d_hash.expect_format({ 'log' => RECORD_HASH_A }.to_msgpack)
+    d_hash.expect_format({ 'log' => RECORD_HASH_B }.to_msgpack)
     d_hash.run
   end
 

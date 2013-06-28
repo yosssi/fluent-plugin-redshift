@@ -70,7 +70,13 @@ class RedshiftOutput < BufferedOutput
   end
 
   def format(tag, time, record)
-    (json? || hash?) ? record.to_msgpack : "#{record[@record_log_tag]}\n"
+    if json?
+      record.to_msgpack
+    elsif hash?
+      { @record_log_tag => record }.to_msgpack
+    else
+      "#{record[@record_log_tag]}\n"
+    end
   end
 
   def write(chunk)
@@ -161,7 +167,7 @@ class RedshiftOutput < BufferedOutput
       gzw = Zlib::GzipWriter.new(dst_file)
       chunk.msgpack_each do |record|
         begin
-          hash = json? ? json_to_hash(record[@record_log_tag]) : record
+          hash = json? ? json_to_hash(record[@record_log_tag]) : record[@record_log_tag]
           tsv_text = hash_to_table_text(redshift_table_columns, hash, delimiter)
           gzw.write(tsv_text) if tsv_text and not tsv_text.empty?
         rescue => e
