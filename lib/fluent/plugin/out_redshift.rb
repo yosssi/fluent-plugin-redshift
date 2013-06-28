@@ -35,7 +35,7 @@ class RedshiftOutput < BufferedOutput
   config_param :redshift_password, :string
   config_param :redshift_tablename, :string
   # file format
-  config_param :file_type, :string, :default => nil  # json, tsv, csv, hash
+  config_param :file_type, :string, :default => nil  # json, tsv, csv, msgpack
   config_param :delimiter, :string, :default => nil
   # for debug
   config_param :log_suffix, :string, :default => ''
@@ -72,7 +72,7 @@ class RedshiftOutput < BufferedOutput
   def format(tag, time, record)
     if json?
       record.to_msgpack
-    elsif hash?
+    elsif msgpack?
       { @record_log_tag => record }.to_msgpack
     else
       "#{record[@record_log_tag]}\n"
@@ -85,7 +85,7 @@ class RedshiftOutput < BufferedOutput
     # create a gz file
     tmp = Tempfile.new("s3-")
     tmp =
-      if json? || hash?
+      if json? || msgpack?
         create_gz_file_from_structured_data(tmp, chunk, @delimiter)
       else
         create_gz_file_from_flat_data(tmp, chunk)
@@ -136,8 +136,8 @@ class RedshiftOutput < BufferedOutput
     @file_type == 'json'
   end
 
-  def hash?
-    @file_type == 'hash'
+  def msgpack?
+    @file_type == 'msgpack'
   end
 
   def create_gz_file_from_flat_data(dst_file, chunk)
@@ -174,7 +174,7 @@ class RedshiftOutput < BufferedOutput
           if json?
             $log.error format_log("failed to create table text from json. text=(#{record[@record_log_tag]})"), :error=>$!.to_s
           else
-            $log.error format_log("failed to create table text from hash. text=(#{record})"), :error=>$!.to_s
+            $log.error format_log("failed to create table text from msgpack. text=(#{record[@record_log_tag]})"), :error=>$!.to_s
           end
 
           $log.error_backtrace
@@ -189,7 +189,7 @@ class RedshiftOutput < BufferedOutput
 
   def determine_delimiter(file_type)
     case file_type
-    when 'json', 'hash', 'tsv'
+    when 'json', 'msgpack', 'tsv'
       "\t"
     when "csv"
       ','
@@ -236,7 +236,7 @@ class RedshiftOutput < BufferedOutput
     end
 
     if val_list.all?{|v| v.nil? or v.empty?}
-      $log.warn format_log("no data match for table columns on redshift. hash=#{hash} table_columns=#{redshift_table_columns}")
+      $log.warn format_log("no data match for table columns on redshift. data=#{hash} table_columns=#{redshift_table_columns}")
       return ""
     end
 

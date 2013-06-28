@@ -31,7 +31,7 @@ Format:
         redshift_user YOUR_AMAZON_REDSHIFT_CLUSTER_USER_NAME
         redshift_password YOUR_AMAZON_REDSHIFT_CLUSTER_PASSWORD
         redshift_tablename YOUR_AMAZON_REDSHIFT_CLUSTER_TARGET_TABLE_NAME
-        file_type [tsv|csv|json|hash]
+        file_type [tsv|csv|json|msgpack]
 
         # buffer
         buffer_type file
@@ -110,7 +110,7 @@ Example (watch and upload json formatted apache log):
 
 + `redshift_tablename` (required) : table name to store data.
 
-+ `file_type` : file format of the source data.  `csv`, `tsv`, `hash` or `json` are available.
++ `file_type` : file format of the source data.  `csv`, `tsv`, `msgpack` or `json` are available.
 
 + `delimiter` : delimiter of the source data. This option will be ignored if `file_type` is specified.
 
@@ -140,7 +140,7 @@ log.post('your.tag', :log => "12345\t12345")
 require 'json'
 log.post('your.tag', :log => { :user_id => 12345, :data_id => 12345 }.to_json)
 
-# file_type: hash
+# file_type: msgpack
 log.post('your.tag', :user_id => 12345, :data_id => 12345)
 ```
 
