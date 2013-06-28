@@ -80,9 +80,9 @@ class RedshiftOutput < BufferedOutput
     tmp = Tempfile.new("s3-")
     tmp =
       if json? || hash?
-        create_gz_file_from_hash(tmp, chunk, @delimiter)
+        create_gz_file_from_structured_data(tmp, chunk, @delimiter)
       else
-        create_gz_file_from_msgpack(tmp, chunk)
+        create_gz_file_from_flat_data(tmp, chunk)
       end
 
     # no data -> skip
@@ -134,7 +134,7 @@ class RedshiftOutput < BufferedOutput
     @file_type == 'hash'
   end
 
-  def create_gz_file_from_msgpack(dst_file, chunk)
+  def create_gz_file_from_flat_data(dst_file, chunk)
     gzw = nil
     begin
       gzw = Zlib::GzipWriter.new(dst_file)
@@ -145,7 +145,7 @@ class RedshiftOutput < BufferedOutput
     dst_file
   end
 
-  def create_gz_file_from_hash(dst_file, chunk, delimiter)
+  def create_gz_file_from_structured_data(dst_file, chunk, delimiter)
     # fetch the table definition from redshift
     redshift_table_columns = fetch_table_columns
     if redshift_table_columns == nil
