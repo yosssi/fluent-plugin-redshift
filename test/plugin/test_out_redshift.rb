@@ -40,6 +40,11 @@ class RedshiftOutputTest < Test::Unit::TestCase
     #{CONFIG_BASE}
     file_type json
   ]
+  CONFIG_JSON_WITH_SCHEMA = %[
+    #{CONFIG_BASE}
+    redshift_schemaname test_schema
+    file_type json
+  ]
   CONFIG_MSGPACK = %[
     #{CONFIG_BASE}
     file_type msgpack
@@ -95,11 +100,16 @@ class RedshiftOutputTest < Test::Unit::TestCase
     assert_equal "test_user", d.instance.redshift_user
     assert_equal "test_password", d.instance.redshift_password
     assert_equal "test_table", d.instance.redshift_tablename
+    assert_equal "public", d.instance.redshift_schemaname
     assert_equal "FILLRECORD ACCEPTANYDATE TRUNCATECOLUMNS", d.instance.redshift_copy_base_options
     assert_equal nil, d.instance.redshift_copy_options
     assert_equal "csv", d.instance.file_type
     assert_equal ",", d.instance.delimiter
     assert_equal true, d.instance.utc
+  end
+  def test_configure_with_schemaname
+    d = create_driver(CONFIG_JSON_WITH_SCHEMA)
+    assert_equal "test_schema", d.instance.redshift_schemaname
   end
   def test_configure_localtime
     d = create_driver(CONFIG_CSV.gsub(/ *utc */, ''))
@@ -202,12 +212,24 @@ class RedshiftOutputTest < Test::Unit::TestCase
   end
 
   class PGConnectionMock
-    def initialize(return_keys=['key_a', 'key_b', 'key_c', 'key_d', 'key_e', 'key_f', 'key_g', 'key_h'])
-      @return_keys = return_keys
+    def initialize(options = {})
+      @return_keys = options[:return_keys] || ['key_a', 'key_b', 'key_c', 'key_d', 'key_e', 'key_f', 'key_g', 'key_h']
+      @target_schema = options[:schemaname] || 'public'
+      @target_table = options[:tablename] || 'test_table'
     end
     def exec(sql, &block)
-      if block_given? and /^select column_name from/ =~ sql
-        yield @return_keys.collect{|key| {'column_name' => key}}
+      if block_given?
+        if sql =~ /\Aselect column_name from INFORMATION_SCHEMA.COLUMNS where table_schema = '#{@target_schema}' and table_name = '#{@target_table}'/
+          yield @return_keys.collect{|key| {'column_name' => key}}
+        else
+          yield []
+        end
+      else
+        unless sql =~ /\Acopy #{@target_schema}.#{@target_table} from/
+          error = PG::Error.new("ERROR:  Load into table '#{@target_table}' failed.  Check 'stl_load_errors' system table for details.")
+          error.result = "ERROR:  Load into table '#{@target_table}' failed.  Check 'stl_load_errors' system table for details."
+          raise error
+        end
       end
     end
     def close
@@ -474,4 +496,13 @@ class RedshiftOutputTest < Test::Unit::TestCase
     }
   end
 
+  def test_write_with_json_fetch_column_with_schema
+    def PG.connect(dbinfo)
+      return PGConnectionMock.new(:schemaname => 'test_schema')
+    end
+    setup_s3_mock(%[val_a\tval_b\t\t\t\t\t\t\n\t\tval_c\tval_d\t\t\t\t\n])
+    d_json = create_driver(CONFIG_JSON_WITH_SCHEMA)
+    emit_json(d_json)
+    assert_equal true, d_json.run
+  end
 end

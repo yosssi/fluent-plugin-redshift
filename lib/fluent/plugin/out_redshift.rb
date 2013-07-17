@@ -34,6 +34,7 @@ class RedshiftOutput < BufferedOutput
   config_param :redshift_user, :string
   config_param :redshift_password, :string
   config_param :redshift_tablename, :string
+  config_param :redshift_schemaname, :string, :default => 'public'
   config_param :redshift_copy_base_options, :string , :default => "FILLRECORD ACCEPTANYDATE TRUNCATECOLUMNS"
   config_param :redshift_copy_options, :string , :default => nil
   # file format
@@ -56,7 +57,7 @@ class RedshiftOutput < BufferedOutput
     }
     @delimiter = determine_delimiter(@file_type) if @delimiter.nil? or @delimiter.empty?
     $log.debug format_log("redshift file_type:#{@file_type} delimiter:'#{@delimiter}'")
-    @copy_sql_template = "copy #{@redshift_tablename} from '%s' CREDENTIALS 'aws_access_key_id=#{@aws_key_id};aws_secret_access_key=%s' delimiter '#{@delimiter}' GZIP ESCAPE #{@redshift_copy_base_options} #{@redshift_copy_options};"
+    @copy_sql_template = "copy #{table_name_with_schema} from '%s' CREDENTIALS 'aws_access_key_id=#{@aws_key_id};aws_secret_access_key=%s' delimiter '#{@delimiter}' GZIP ESCAPE #{@redshift_copy_base_options} #{@redshift_copy_options};"
   end
 
   def start
@@ -159,7 +160,7 @@ class RedshiftOutput < BufferedOutput
     if redshift_table_columns == nil
       raise "failed to fetch the redshift table definition."
     elsif redshift_table_columns.empty?
-      $log.warn format_log("no table on redshift. table_name=#{@redshift_tablename}")
+      $log.warn format_log("no table on redshift. table_name=#{table_name_with_schema}")
       return nil
     end
 
@@ -201,7 +202,7 @@ class RedshiftOutput < BufferedOutput
   end
 
   def fetch_table_columns
-    fetch_columns_sql = "select column_name from INFORMATION_SCHEMA.COLUMNS where table_name = '#{@redshift_tablename}' order by ordinal_position;"
+    fetch_columns_sql = "select column_name from INFORMATION_SCHEMA.COLUMNS where table_schema = '#{@redshift_schemaname}' and table_name = '#{@redshift_tablename}' order by ordinal_position;"
     conn = PG.connect(@db_conf)
     begin
       columns = nil
@@ -267,6 +268,9 @@ class RedshiftOutput < BufferedOutput
     s3path
   end
 
+  def table_name_with_schema
+    @table_name_with_schema ||= "#{@redshift_schemaname}.#{@redshift_tablename}"
+  end
 end
 
 
