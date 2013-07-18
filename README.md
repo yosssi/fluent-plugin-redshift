@@ -30,6 +30,7 @@ Format:
         redshift_dbname YOUR_AMAZON_REDSHIFT_CLUSTER_DATABASE_NAME
         redshift_user YOUR_AMAZON_REDSHIFT_CLUSTER_USER_NAME
         redshift_password YOUR_AMAZON_REDSHIFT_CLUSTER_PASSWORD
+        redshift_schemaname YOUR_AMAZON_REDSHIFT_CLUSTER_TARGET_SCHEMA_NAME
         redshift_tablename YOUR_AMAZON_REDSHIFT_CLUSTER_TARGET_TABLE_NAME
         file_type [tsv|csv|json|msgpack]
 
@@ -109,6 +110,8 @@ Example (watch and upload json formatted apache log):
 + `redshift_password` (required) : password for the user name.
 
 + `redshift_tablename` (required) : table name to store data.
+
++ `redshift_schemaname` : schema name to store data. Default value is `public`.
 
 + `file_type` : file format of the source data.  `csv`, `tsv`, `msgpack` or `json` are available.
 
