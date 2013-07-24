@@ -34,7 +34,7 @@ class RedshiftOutput < BufferedOutput
   config_param :redshift_user, :string
   config_param :redshift_password, :string
   config_param :redshift_tablename, :string
-  config_param :redshift_schemaname, :string, :default => 'public'
+  config_param :redshift_schemaname, :string, :default => nil
   config_param :redshift_copy_base_options, :string , :default => "FILLRECORD ACCEPTANYDATE TRUNCATECOLUMNS"
   config_param :redshift_copy_options, :string , :default => nil
   # file format
@@ -202,17 +202,24 @@ class RedshiftOutput < BufferedOutput
   end
 
   def fetch_table_columns
-    fetch_columns_sql = "select column_name from INFORMATION_SCHEMA.COLUMNS where table_schema = '#{@redshift_schemaname}' and table_name = '#{@redshift_tablename}' order by ordinal_position;"
     conn = PG.connect(@db_conf)
     begin
       columns = nil
-      conn.exec(fetch_columns_sql) do |result|
+      conn.exec(fetch_columns_sql_with_schema) do |result|
         columns = result.collect{|row| row['column_name']}
       end
       columns
     ensure
       conn.close rescue nil
     end
+  end
+
+  def fetch_columns_sql_with_schema
+    @fetch_columns_sql ||= if @redshift_schemaname
+                             "select column_name from INFORMATION_SCHEMA.COLUMNS where table_schema = '#{@redshift_schemaname}' and table_name = '#{@redshift_tablename}' order by ordinal_position;"
+                           else
+                             "select column_name from INFORMATION_SCHEMA.COLUMNS where table_name = '#{@redshift_tablename}' order by ordinal_position;"
+                           end
   end
 
   def json_to_hash(json_text)
@@ -269,7 +276,11 @@ class RedshiftOutput < BufferedOutput
   end
 
   def table_name_with_schema
-    @table_name_with_schema ||= "#{@redshift_schemaname}.#{@redshift_tablename}"
+    @table_name_with_schema ||= if @redshift_schemaname
+                                  "#{@redshift_schemaname}.#{@redshift_tablename}"
+                                else
+                                  @redshift_tablename
+                                end
   end
 end
 

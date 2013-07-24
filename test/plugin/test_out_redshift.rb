@@ -100,7 +100,7 @@ class RedshiftOutputTest < Test::Unit::TestCase
     assert_equal "test_user", d.instance.redshift_user
     assert_equal "test_password", d.instance.redshift_password
     assert_equal "test_table", d.instance.redshift_tablename
-    assert_equal "public", d.instance.redshift_schemaname
+    assert_equal nil, d.instance.redshift_schemaname
     assert_equal "FILLRECORD ACCEPTANYDATE TRUNCATECOLUMNS", d.instance.redshift_copy_base_options
     assert_equal nil, d.instance.redshift_copy_options
     assert_equal "csv", d.instance.file_type
@@ -214,24 +214,42 @@ class RedshiftOutputTest < Test::Unit::TestCase
   class PGConnectionMock
     def initialize(options = {})
       @return_keys = options[:return_keys] || ['key_a', 'key_b', 'key_c', 'key_d', 'key_e', 'key_f', 'key_g', 'key_h']
-      @target_schema = options[:schemaname] || 'public'
+      @target_schema = options[:schemaname] || nil
       @target_table = options[:tablename] || 'test_table'
     end
+
+    def expected_column_list_query
+      if @target_schema
+        /\Aselect column_name from INFORMATION_SCHEMA.COLUMNS where table_schema = '#{@target_schema}' and table_name = '#{@target_table}'/
+      else
+        /\Aselect column_name from INFORMATION_SCHEMA.COLUMNS where table_name = '#{@target_table}'/
+      end
+    end
+
+    def expected_copy_query
+      if @target_schema
+        /\Acopy #{@target_schema}.#{@target_table} from/
+      else
+        /\Acopy #{@target_table} from/
+      end
+    end
+
     def exec(sql, &block)
       if block_given?
-        if sql =~ /\Aselect column_name from INFORMATION_SCHEMA.COLUMNS where table_schema = '#{@target_schema}' and table_name = '#{@target_table}'/
+        if sql =~ expected_column_list_query
           yield @return_keys.collect{|key| {'column_name' => key}}
         else
           yield []
         end
       else
-        unless sql =~ /\Acopy #{@target_schema}.#{@target_table} from/
+        unless sql =~ expected_copy_query
           error = PG::Error.new("ERROR:  Load into table '#{@target_table}' failed.  Check 'stl_load_errors' system table for details.")
           error.result = "ERROR:  Load into table '#{@target_table}' failed.  Check 'stl_load_errors' system table for details."
           raise error
         end
       end
     end
+
     def close
     end
   end

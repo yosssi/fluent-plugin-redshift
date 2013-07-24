@@ -111,7 +111,7 @@ Example (watch and upload json formatted apache log):
 
 + `redshift_tablename` (required) : table name to store data.
 
-+ `redshift_schemaname` : schema name to store data. Default value is `public`.
++ `redshift_schemaname` : schema name to store data. By default, this option is not set and find table without schema as your own search_path.
 
 + `file_type` : file format of the source data.  `csv`, `tsv`, `msgpack` or `json` are available.
 
