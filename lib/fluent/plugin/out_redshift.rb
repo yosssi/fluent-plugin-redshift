@@ -37,6 +37,7 @@ class RedshiftOutput < BufferedOutput
   config_param :redshift_schemaname, :string, :default => nil
   config_param :redshift_copy_base_options, :string , :default => "FILLRECORD ACCEPTANYDATE TRUNCATECOLUMNS"
   config_param :redshift_copy_options, :string , :default => nil
+  config_param :redshift_connect_timeout, :integer, :default => 10
   # file format
   config_param :file_type, :string, :default => nil  # json, tsv, csv, msgpack
   config_param :delimiter, :string, :default => nil
@@ -53,7 +54,8 @@ class RedshiftOutput < BufferedOutput
       port:@redshift_port,
       dbname:@redshift_dbname,
       user:@redshift_user,
-      password:@redshift_password
+      password:@redshift_password,
+      connect_timeout: @redshift_connect_timeout
     }
     @delimiter = determine_delimiter(@file_type) if @delimiter.nil? or @delimiter.empty?
     $log.debug format_log("redshift file_type:#{@file_type} delimiter:'#{@delimiter}'")
