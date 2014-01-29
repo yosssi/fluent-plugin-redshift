@@ -60,6 +60,12 @@ class RedshiftOutput < BufferedOutput
     @delimiter = determine_delimiter(@file_type) if @delimiter.nil? or @delimiter.empty?
     $log.debug format_log("redshift file_type:#{@file_type} delimiter:'#{@delimiter}'")
     @copy_sql_template = "copy #{table_name_with_schema} from '%s' CREDENTIALS 'aws_access_key_id=#{@aws_key_id};aws_secret_access_key=%s' delimiter '#{@delimiter}' GZIP ESCAPE #{@redshift_copy_base_options} #{@redshift_copy_options};"
+
+    begin
+      PG.connect(@db_conf)
+    rescue => e
+      $log.error "fluent-plugin-redshift: #{e}"
+    end
   end
 
   def start
@@ -116,9 +122,14 @@ class RedshiftOutput < BufferedOutput
     s3_uri = "s3://#{@s3_bucket}/#{s3path}"
     sql = @copy_sql_template % [s3_uri, @aws_sec_key]
     $log.debug  format_log("start copying. s3_uri=#{s3_uri}")
-    conn = nil
+
     begin
       conn = PG.connect(@db_conf)
+    rescue => e
+      $log.error "fluent-plugin-redshift: #{e}"
+    end
+
+    begin
       conn.exec(sql)
       $log.info format_log("completed copying to redshift. s3_uri=#{s3_uri}")
     rescue PG::Error => e
@@ -177,9 +188,9 @@ class RedshiftOutput < BufferedOutput
           gzw.write(tsv_text) if tsv_text and not tsv_text.empty?
         rescue => e
           if json?
-            $log.error format_log("failed to create table text from json. text=(#{record[@record_log_tag]})"), :error=>$!.to_s
+            $log.error format_log("failed to create table text from json. text=(#{record[@record_log_tag]})"), :error=>e.to_s
           else
-            $log.error format_log("failed to create table text from msgpack. text=(#{record[@record_log_tag]})"), :error=>$!.to_s
+            $log.error format_log("failed to create table text from msgpack. text=(#{record[@record_log_tag]})"), :error=>e.to_s
           end
 
           $log.error_backtrace
@@ -204,15 +215,15 @@ class RedshiftOutput < BufferedOutput
   end
 
   def fetch_table_columns
-    conn = PG.connect(@db_conf)
     begin
       columns = nil
+      conn = PG.connect(@db_conf)
       conn.exec(fetch_columns_sql_with_schema) do |result|
         columns = result.collect{|row| row['column_name']}
       end
       columns
-    ensure
-      conn.close rescue nil
+    rescue => e
+      $log.error "fluent-plugin-redshift: #{e}"
     end
   end
 
