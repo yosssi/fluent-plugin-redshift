@@ -222,8 +222,8 @@ class RedshiftOutput < BufferedOutput
         columns = result.collect{|row| row['column_name']}
       end
       columns
-    rescue => e
-      $log.error "fluent-plugin-redshift: #{e}"
+    ensure
+      conn.close rescue nil
     end
   end
 
