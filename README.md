@@ -113,6 +113,8 @@ Example (watch and upload json formatted apache log):
 
 + `redshift_schemaname` : schema name to store data. By default, this option is not set and find table without schema as your own search_path.
 
++ `redshift_connect_timeout` : maximum time to wait for connection to succeed.
+
 + `file_type` : file format of the source data.  `csv`, `tsv`, `msgpack` or `json` are available.
 
 + `delimiter` : delimiter of the source data. This option will be ignored if `file_type` is specified.
