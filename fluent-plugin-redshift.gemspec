@@ -18,7 +18,7 @@ Gem::Specification.new do |gem|
 
   gem.add_dependency "fluentd", "~> 0.10.0"
   gem.add_dependency "aws-sdk", ">= 1.6.3"
-  gem.add_dependency "pg", "~> 0.14.0"
+  gem.add_dependency "pg", "~> 0.17.0"
   gem.add_development_dependency "rake"
   gem.add_development_dependency "simplecov", ">= 0.5.4"
   gem.add_development_dependency "flexmock", ">= 1.3.1"
