@@ -15,7 +15,7 @@ Format:
 
     <match my.tag>
         type redshift
-        
+
         # s3 (for copying data to redshift)
         aws_key_id YOUR_AWS_KEY_ID
         aws_sec_key YOUR_AWS_SECRET_KEY
@@ -23,16 +23,17 @@ Format:
         s3_endpoint YOUR_S3_BUCKET_END_POINT
         path YOUR_S3_PATH
         timestamp_key_format year=%Y/month=%m/day=%d/hour=%H/%Y%m%d-%H%M
-        
+
         # redshift
         redshift_host YOUR_AMAZON_REDSHIFT_CLUSTER_END_POINT
         redshift_port YOUR_AMAZON_REDSHIFT_CLUSTER_PORT
         redshift_dbname YOUR_AMAZON_REDSHIFT_CLUSTER_DATABASE_NAME
         redshift_user YOUR_AMAZON_REDSHIFT_CLUSTER_USER_NAME
         redshift_password YOUR_AMAZON_REDSHIFT_CLUSTER_PASSWORD
+        redshift_schemaname YOUR_AMAZON_REDSHIFT_CLUSTER_TARGET_SCHEMA_NAME
         redshift_tablename YOUR_AMAZON_REDSHIFT_CLUSTER_TARGET_TABLE_NAME
-        file_type [tsv|csv|json]
-        
+        file_type [tsv|csv|json|msgpack]
+
         # buffer
         buffer_type file
         buffer_path /var/log/fluent/redshift
@@ -49,18 +50,18 @@ Example (watch and upload json formatted apache log):
         tag redshift.json
         format /^(?<log>.*)$/
     </source>
-    
+
     <match redshift.json>
         type redshift
-        
+
         # s3 (for copying data to redshift)
         aws_key_id YOUR_AWS_KEY_ID
         aws_sec_key YOUR_AWS_SECRET_KEY
         s3_bucket hapyrus-example
         s3_endpoint s3.amazonaws.com
-        path apache_json_log
+        path path/on/s3/apache_json_log/
         timestamp_key_format year=%Y/month=%m/day=%d/hour=%H/%Y%m%d-%H%M
-        
+
         # redshift
         redshift_host xxx-yyy-zzz.xxxxxxxxxx.us-east-1.redshift.amazonaws.com
         redshift_port 5439
@@ -69,7 +70,7 @@ Example (watch and upload json formatted apache log):
         redshift_password fluent-password
         redshift_tablename apache_log
         file_type json
-        
+
         # buffer
         buffer_type file
         buffer_path /var/log/fluent/redshift
@@ -110,7 +111,9 @@ Example (watch and upload json formatted apache log):
 
 + `redshift_tablename` (required) : table name to store data.
 
-+ `file_type` : file format of the source data.  `csv`, `tsv` or `json` are available.
++ `redshift_schemaname` : schema name to store data. By default, this option is not set and find table without schema as your own search_path.
+
++ `file_type` : file format of the source data.  `csv`, `tsv`, `msgpack` or `json` are available.
 
 + `delimiter` : delimiter of the source data. This option will be ignored if `file_type` is specified.
 
@@ -123,6 +126,26 @@ Example (watch and upload json formatted apache log):
 + `buffer_chunk_limit` : limit buffer size to chunk.
 
 + `utc` : utc time zone. This parameter affects `timestamp_key_format`.
+
+## Logging examples
+```ruby
+# examples by fluent-logger
+require 'fluent-logger'
+log = Fluent::Logger::FluentLogger.new(nil, :host => 'localhost', :port => 24224)
+
+# file_type: csv
+log.post('your.tag', :log => "12345,12345")
+
+# file_type: tsv
+log.post('your.tag', :log => "12345\t12345")
+
+# file_type: json
+require 'json'
+log.post('your.tag', :log => { :user_id => 12345, :data_id => 12345 }.to_json)
+
+# file_type: msgpack
+log.post('your.tag', :user_id => 12345, :data_id => 12345)
+```
 
 ## License
 

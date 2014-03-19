@@ -40,6 +40,15 @@ class RedshiftOutputTest < Test::Unit::TestCase
     #{CONFIG_BASE}
     file_type json
   ]
+  CONFIG_JSON_WITH_SCHEMA = %[
+    #{CONFIG_BASE}
+    redshift_schemaname test_schema
+    file_type json
+  ]
+  CONFIG_MSGPACK = %[
+    #{CONFIG_BASE}
+    file_type msgpack
+  ]
   CONFIG_PIPE_DELIMITER= %[
     #{CONFIG_BASE}
     delimiter |
@@ -57,6 +66,8 @@ class RedshiftOutputTest < Test::Unit::TestCase
   RECORD_TSV_B = {"log" => %[val_e\tval_f\tval_g\tval_h]}
   RECORD_JSON_A = {"log" => %[{"key_a" : "val_a", "key_b" : "val_b"}]}
   RECORD_JSON_B = {"log" => %[{"key_c" : "val_c", "key_d" : "val_d"}]}
+  RECORD_MSGPACK_A = {"key_a" => "val_a", "key_b" => "val_b"}
+  RECORD_MSGPACK_B = {"key_c" => "val_c", "key_d" => "val_d"}
   DEFAULT_TIME = Time.parse("2013-03-06 12:15:02 UTC").to_i
 
   def create_driver(conf = CONFIG, tag='test.input')
@@ -89,9 +100,16 @@ class RedshiftOutputTest < Test::Unit::TestCase
     assert_equal "test_user", d.instance.redshift_user
     assert_equal "test_password", d.instance.redshift_password
     assert_equal "test_table", d.instance.redshift_tablename
+    assert_equal nil, d.instance.redshift_schemaname
+    assert_equal "FILLRECORD ACCEPTANYDATE TRUNCATECOLUMNS", d.instance.redshift_copy_base_options
+    assert_equal nil, d.instance.redshift_copy_options
     assert_equal "csv", d.instance.file_type
     assert_equal ",", d.instance.delimiter
     assert_equal true, d.instance.utc
+  end
+  def test_configure_with_schemaname
+    d = create_driver(CONFIG_JSON_WITH_SCHEMA)
+    assert_equal "test_schema", d.instance.redshift_schemaname
   end
   def test_configure_localtime
     d = create_driver(CONFIG_CSV.gsub(/ *utc */, ''))
@@ -109,6 +127,14 @@ class RedshiftOutputTest < Test::Unit::TestCase
     d = create_driver(CONFIG_CSV.gsub(/ *path *.+$/, 'path log/'))
     assert_equal "log/", d.instance.path
   end
+  def test_configure_path_starts_with_slash
+    d = create_driver(CONFIG_CSV.gsub(/ *path *.+$/, 'path /log/'))
+    assert_equal "log/", d.instance.path
+  end
+  def test_configure_path_starts_with_slash_without_last_slash
+    d = create_driver(CONFIG_CSV.gsub(/ *path *.+$/, 'path /log'))
+    assert_equal "log/", d.instance.path
+  end
   def test_configure_tsv
     d1 = create_driver(CONFIG_TSV)
     assert_equal "tsv", d1.instance.file_type
@@ -117,6 +143,11 @@ class RedshiftOutputTest < Test::Unit::TestCase
   def test_configure_json
     d2 = create_driver(CONFIG_JSON)
     assert_equal "json", d2.instance.file_type
+    assert_equal "\t", d2.instance.delimiter
+  end
+  def test_configure_msgpack
+    d2 = create_driver(CONFIG_MSGPACK)
+    assert_equal "msgpack", d2.instance.file_type
     assert_equal "\t", d2.instance.delimiter
   end
   def test_configure_original_file_type
@@ -145,6 +176,10 @@ class RedshiftOutputTest < Test::Unit::TestCase
     d.emit(RECORD_JSON_A, DEFAULT_TIME)
     d.emit(RECORD_JSON_B, DEFAULT_TIME)
   end
+  def emit_msgpack(d)
+    d.emit(RECORD_MSGPACK_A, DEFAULT_TIME)
+    d.emit(RECORD_MSGPACK_B, DEFAULT_TIME)
+  end
 
   def test_format_csv
     d_csv = create_driver_no_write(CONFIG_CSV)
@@ -168,15 +203,53 @@ class RedshiftOutputTest < Test::Unit::TestCase
     d_json.run
   end
 
+  def test_format_msgpack
+    d_msgpack = create_driver_no_write(CONFIG_MSGPACK)
+    emit_msgpack(d_msgpack)
+    d_msgpack.expect_format({ 'log' => RECORD_MSGPACK_A }.to_msgpack)
+    d_msgpack.expect_format({ 'log' => RECORD_MSGPACK_B }.to_msgpack)
+    d_msgpack.run
+  end
+
   class PGConnectionMock
-    def initialize(return_keys=['key_a', 'key_b', 'key_c', 'key_d', 'key_e', 'key_f', 'key_g', 'key_h'])
-      @return_keys = return_keys
+    def initialize(options = {})
+      @return_keys = options[:return_keys] || ['key_a', 'key_b', 'key_c', 'key_d', 'key_e', 'key_f', 'key_g', 'key_h']
+      @target_schema = options[:schemaname] || nil
+      @target_table = options[:tablename] || 'test_table'
     end
-    def exec(sql, &block)
-      if block_given? and /^select column_name from/ =~ sql
-        yield @return_keys.collect{|key| {'column_name' => key}}
+
+    def expected_column_list_query
+      if @target_schema
+        /\Aselect column_name from INFORMATION_SCHEMA.COLUMNS where table_schema = '#{@target_schema}' and table_name = '#{@target_table}'/
+      else
+        /\Aselect column_name from INFORMATION_SCHEMA.COLUMNS where table_name = '#{@target_table}'/
       end
     end
+
+    def expected_copy_query
+      if @target_schema
+        /\Acopy #{@target_schema}.#{@target_table} from/
+      else
+        /\Acopy #{@target_table} from/
+      end
+    end
+
+    def exec(sql, &block)
+      if block_given?
+        if sql =~ expected_column_list_query
+          yield @return_keys.collect{|key| {'column_name' => key}}
+        else
+          yield []
+        end
+      else
+        unless sql =~ expected_copy_query
+          error = PG::Error.new("ERROR:  Load into table '#{@target_table}' failed.  Check 'stl_load_errors' system table for details.")
+          error.result = "ERROR:  Load into table '#{@target_table}' failed.  Check 'stl_load_errors' system table for details."
+          raise error
+        end
+      end
+    end
+
     def close
     end
   end
@@ -228,12 +301,17 @@ class RedshiftOutputTest < Test::Unit::TestCase
     end
   end
 
+  def setup_tempfile_mock_to_be_closed
+    flexmock(Tempfile).new_instances.should_receive(:close!).at_least.once
+  end
+
   def setup_mocks(expected_data)
     setup_pg_mock
     setup_s3_mock(expected_data) end
 
   def test_write_with_csv
     setup_mocks(%[val_a,val_b,val_c,val_d\nval_e,val_f,val_g,val_h\n])
+    setup_tempfile_mock_to_be_closed
     d_csv = create_driver
     emit_csv(d_csv)
     assert_equal true, d_csv.run
@@ -241,6 +319,7 @@ class RedshiftOutputTest < Test::Unit::TestCase
 
   def test_write_with_json
     setup_mocks(%[val_a\tval_b\t\t\t\t\t\t\n\t\tval_c\tval_d\t\t\t\t\n])
+    setup_tempfile_mock_to_be_closed
     d_json = create_driver(CONFIG_JSON)
     emit_json(d_json)
     assert_equal true, d_json.run
@@ -292,6 +371,53 @@ class RedshiftOutputTest < Test::Unit::TestCase
     d_json.emit(RECORD_JSON_A, DEFAULT_TIME)
     d_json.emit({"log" => %[{"key_o" : "val_o", "key_p" : "val_p"}]}, DEFAULT_TIME)
     assert_equal true, d_json.run
+  end
+
+  def test_write_with_msgpack
+    setup_mocks(%[val_a\tval_b\t\t\t\t\t\t\n\t\tval_c\tval_d\t\t\t\t\n])
+    d_msgpack = create_driver(CONFIG_MSGPACK)
+    emit_msgpack(d_msgpack)
+    assert_equal true, d_msgpack.run
+  end
+
+  def test_write_with_msgpack_hash_value
+    setup_mocks("val_a\t{\"foo\":\"var\"}\t\t\t\t\t\t\n\t\tval_c\tval_d\t\t\t\t\n")
+    d_msgpack = create_driver(CONFIG_MSGPACK)
+    d_msgpack.emit({"key_a" => "val_a", "key_b" => {"foo" => "var"}} , DEFAULT_TIME)
+    d_msgpack.emit(RECORD_MSGPACK_B, DEFAULT_TIME)
+    assert_equal true, d_msgpack.run
+  end
+
+  def test_write_with_msgpack_array_value
+    setup_mocks("val_a\t[\"foo\",\"var\"]\t\t\t\t\t\t\n\t\tval_c\tval_d\t\t\t\t\n")
+    d_msgpack = create_driver(CONFIG_MSGPACK)
+    d_msgpack.emit({"key_a" => "val_a", "key_b" => ["foo", "var"]} , DEFAULT_TIME)
+    d_msgpack.emit(RECORD_MSGPACK_B, DEFAULT_TIME)
+    assert_equal true, d_msgpack.run
+  end
+
+  def test_write_with_msgpack_including_tab_newline_quote
+    setup_mocks("val_a_with_\\\t_tab_\\\n_newline\tval_b_with_\\\\_quote\t\t\t\t\t\t\n\t\tval_c\tval_d\t\t\t\t\n")
+    d_msgpack = create_driver(CONFIG_MSGPACK)
+    d_msgpack.emit({"key_a" => "val_a_with_\t_tab_\n_newline", "key_b" => "val_b_with_\\_quote"} , DEFAULT_TIME)
+    d_msgpack.emit(RECORD_MSGPACK_B, DEFAULT_TIME)
+    assert_equal true, d_msgpack.run
+  end
+
+  def test_write_with_msgpack_no_data
+    setup_mocks("")
+    d_msgpack = create_driver(CONFIG_MSGPACK)
+    d_msgpack.emit({}, DEFAULT_TIME)
+    d_msgpack.emit({}, DEFAULT_TIME)
+    assert_equal false, d_msgpack.run
+  end
+
+  def test_write_with_msgpack_no_available_data
+    setup_mocks(%[val_a\tval_b\t\t\t\t\t\t\n])
+    d_msgpack = create_driver(CONFIG_MSGPACK)
+    d_msgpack.emit(RECORD_MSGPACK_A, DEFAULT_TIME)
+    d_msgpack.emit({"key_o" => "val_o", "key_p" => "val_p"}, DEFAULT_TIME)
+    assert_equal true, d_msgpack.run
   end
 
   def test_write_redshift_connection_error
@@ -388,4 +514,13 @@ class RedshiftOutputTest < Test::Unit::TestCase
     }
   end
 
+  def test_write_with_json_fetch_column_with_schema
+    def PG.connect(dbinfo)
+      return PGConnectionMock.new(:schemaname => 'test_schema')
+    end
+    setup_s3_mock(%[val_a\tval_b\t\t\t\t\t\t\n\t\tval_c\tval_d\t\t\t\t\n])
+    d_json = create_driver(CONFIG_JSON_WITH_SCHEMA)
+    emit_json(d_json)
+    assert_equal true, d_json.run
+  end
 end
