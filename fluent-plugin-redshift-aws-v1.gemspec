@@ -16,9 +16,9 @@ Gem::Specification.new do |gem|
   gem.test_files    = gem.files.grep(%r{^(test|spec|features)/})
   gem.require_paths = ["lib"]
 
-  gem.add_dependency "fluentd", "~> 0.10.0"
+  gem.add_dependency "fluentd", "~> 0.12.7"
   gem.add_dependency "aws-sdk-v1", "~> 1.64.0"
-  gem.add_dependency "pg", "~> 0.17.0"
+  gem.add_dependency "pg", "~> 0.18.1"
   gem.add_development_dependency "rake"
   gem.add_development_dependency "simplecov", ">= 0.5.4"
   gem.add_development_dependency "flexmock", ">= 1.3.1"
