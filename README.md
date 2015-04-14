@@ -7,7 +7,7 @@ Amazon Redshift output plugin uploads event logs to an Amazon Redshift Cluster. 
 
 ## Installation
 
-    gem install fluent-plugin-redshift
+    gem install fluent-plugin-redshift-aws-v1
 
 ## Configuration
 
