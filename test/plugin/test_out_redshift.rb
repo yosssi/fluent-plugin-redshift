@@ -8,7 +8,7 @@ require 'zlib'
 
 class RedshiftOutputTest < Test::Unit::TestCase
   def setup
-    require 'aws-sdk'
+    require 'aws-sdk-v1'
     require 'pg'
     require 'csv'
     Fluent::Test.setup
